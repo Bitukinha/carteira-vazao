@@ -1,0 +1,3 @@
+- Excel export and calculations run fully in the browser (SheetJS, src/lib/carteira.ts).
+- Inputs are persisted to Neon Postgres via TanStack server functions (src/lib/estado.ts); needs `DATABASE_URL`.
+- Deployed on Vercel: nitro preset switches to `vercel` when `VERCEL=1` (vite.config.ts).
