@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { Moon, RotateCcw, Sun } from "lucide-react";
-import { PRODUTOS, calcular, exportar } from "@/lib/carteira";
+import { PRODUTOS, calcular, calcularHoras, exportar, type ConfigHoras } from "@/lib/carteira";
 import { carregarEstado, salvarEstado, type Estado } from "@/lib/estado";
 import {
   AlertDialog,
@@ -19,9 +19,15 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "Nutrimilho · Cálculo de Carteira" },
-      { name: "description", content: "Informe a carteira de cada produto e calcule horas, dias e produção necessária." },
+      {
+        name: "description",
+        content: "Informe a carteira de cada produto e calcule horas, dias e produção necessária.",
+      },
       { property: "og:title", content: "Nutrimilho · Cálculo de Carteira" },
-      { property: "og:description", content: "Informe a carteira de cada produto e calcule horas, dias e produção necessária." },
+      {
+        property: "og:description",
+        content: "Informe a carteira de cada produto e calcule horas, dias e produção necessária.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -49,6 +55,18 @@ const parseQtd = (s: string): number => {
 const vazaoPadrao = (): Record<string, string> =>
   Object.fromEntries(PRODUTOS.map((p) => [p.produto, n0.format(p.vazao)]));
 
+const mesAtual = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+
+const horasPadrao = (): Record<string, string> => ({
+  mes: mesAtual(),
+  horasDia: "24",
+  feriados: "",
+  extras: "",
+});
+
 type Status = "salvo" | "salvando" | "erro" | "pendente";
 
 function Index() {
@@ -57,6 +75,10 @@ function Index() {
   const [vazao, setVazao] = useState<Record<string, string>>(() => ({
     ...vazaoPadrao(),
     ...inicial.estado?.vazao,
+  }));
+  const [horas, setHoras] = useState<Record<string, string>>(() => ({
+    ...horasPadrao(),
+    ...inicial.estado?.horas,
   }));
   const [status, setStatus] = useState<Status>(inicial.erro ? "erro" : "salvo");
 
@@ -68,7 +90,7 @@ function Index() {
       return;
     }
     setStatus("pendente");
-    const dados: Estado = { vazao, carteira: qtd };
+    const dados: Estado = { vazao, carteira: qtd, horas };
     const t = setTimeout(() => {
       setStatus("salvando");
       salvarEstado({ data: dados })
@@ -79,11 +101,12 @@ function Index() {
         });
     }, 700);
     return () => clearTimeout(t);
-  }, [vazao, qtd]);
+  }, [vazao, qtd, horas]);
 
   const zerar = () => {
     setQtd({});
     setVazao(vazaoPadrao());
+    setHoras(horasPadrao());
   };
 
   const linhas = PRODUTOS.map((p) => ({
@@ -93,12 +116,25 @@ function Index() {
   }));
   const r = calcular(linhas);
   const temDados = r.totalCarteira > 0;
+  const config: ConfigHoras = {
+    mes: horas["mes"] || mesAtual(),
+    horasDia: parseQtd(horas["horasDia"] ?? ""),
+    feriados: parseQtd(horas["feriados"] ?? ""),
+    extras: parseQtd(horas["extras"] ?? ""),
+  };
+  const h = calcularHoras(config, r.totalHoras);
+  const setHora = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setHoras((x) => ({ ...x, [k]: e.target.value }));
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
-          <img src="/nutrimilho-logo.png" alt="Nutrimilho" className="h-12 rounded-lg bg-white px-2 py-1" />
+          <img
+            src="/nutrimilho-logo.png"
+            alt="Nutrimilho"
+            className="h-12 rounded-lg bg-white px-2 py-1"
+          />
           <ThemeToggle />
         </div>
         <div className="h-1 bg-brand-stripe" />
@@ -107,9 +143,12 @@ function Index() {
       <main className="mx-auto max-w-6xl px-6 py-10">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="font-display text-3xl font-bold text-primary md:text-4xl">Cálculo de Carteira</h1>
+            <h1 className="font-display text-3xl font-bold text-primary md:text-4xl">
+              Cálculo de Carteira
+            </h1>
             <p className="mt-2 text-muted-foreground">
-              Informe a carteira e a vazão/h de cada produto. Horas, dias e representatividade calculam na hora.
+              Informe a carteira e a vazão/h de cada produto. Horas, dias e representatividade
+              calculam na hora.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -125,7 +164,8 @@ function Index() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Zerar todos os valores?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    As carteiras serão apagadas e as vazões voltarão ao padrão. Essa ação não pode ser desfeita.
+                    As carteiras serão apagadas e as vazões e as horas do mês voltarão ao padrão.
+                    Essa ação não pode ser desfeita.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -140,6 +180,12 @@ function Index() {
               </AlertDialogContent>
             </AlertDialog>
           </div>
+        </div>
+
+        <div className="mt-8 grid gap-4 sm:grid-cols-3">
+          <Kpi label="Falta produzir no mês (kg)" value={n0.format(r.totalCarteira)} accent />
+          <Kpi label="Horas necessárias" value={temDados ? n0.format(r.totalHoras) : "—"} />
+          <Kpi label="Dias necessários" value={temDados ? n1.format(r.totalDias) : "—"} />
         </div>
 
         <div className="mt-8 overflow-x-auto rounded-2xl border border-border bg-card shadow-sm">
@@ -180,8 +226,12 @@ function Index() {
                       className="w-36 rounded-lg border border-border bg-background px-3 py-2 text-right text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent"
                     />
                   </td>
-                  <td className="px-4 py-3 text-right">{l.carteira > 0 ? n1.format(l.horas) : "—"}</td>
-                  <td className="px-4 py-3 text-right">{l.carteira > 0 ? n1.format(l.dias) : "—"}</td>
+                  <td className="px-4 py-3 text-right">
+                    {l.carteira > 0 ? n1.format(l.horas) : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {l.carteira > 0 ? n1.format(l.dias) : "—"}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <div className="h-2 w-16 overflow-hidden rounded-full bg-muted">
@@ -190,8 +240,12 @@ function Index() {
                       {l.carteira > 0 ? pct.format(l.rep) : "—"}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-right">{l.carteira > 0 ? n0.format(l.vazaoPond) : "—"}</td>
-                  <td className="px-4 py-3 text-right">{l.carteira > 0 ? n0.format(l.prodDiaPond) : "—"}</td>
+                  <td className="px-4 py-3 text-right">
+                    {l.carteira > 0 ? n0.format(l.vazaoPond) : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {l.carteira > 0 ? n0.format(l.prodDiaPond) : "—"}
+                  </td>
                 </tr>
               ))}
               <tr className="border-t-2 border-primary font-bold text-primary">
@@ -202,20 +256,101 @@ function Index() {
                 <td className="px-4 py-3 text-right">{temDados ? n0.format(r.totalDias) : "—"}</td>
                 <td className="px-4 py-3 text-right">{temDados ? "100%" : "—"}</td>
                 <td className="px-4 py-3 text-right">{temDados ? n0.format(r.mediaVazao) : "—"}</td>
-                <td className="px-4 py-3 text-right">{temDados ? n0.format(r.producaoDia) : "—"}</td>
+                <td className="px-4 py-3 text-right">
+                  {temDados ? n0.format(r.producaoDia) : "—"}
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
 
+        <section className="mt-10 rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <h2 className="font-display text-2xl font-bold text-primary">Horas do mês</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Segunda a sábado são dias normais. Domingos e feriados trabalhados entram como hora
+            extra.
+          </p>
+          <div className="mt-6 grid items-end gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Campo label="Mês">
+              <input
+                type="month"
+                value={horas["mes"] ?? ""}
+                onChange={setHora("mes")}
+                className={campo}
+              />
+            </Campo>
+            <Campo label="Horas por dia">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={horas["horasDia"] ?? ""}
+                onChange={setHora("horasDia")}
+                placeholder="24"
+                className={campo}
+              />
+            </Campo>
+            <Campo label="Feriados (seg. a sáb.) sem trabalho">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={horas["feriados"] ?? ""}
+                onChange={setHora("feriados")}
+                placeholder="0"
+                className={campo}
+              />
+            </Campo>
+            <Campo label="Domingos/feriados trabalhados">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={horas["extras"] ?? ""}
+                onChange={setHora("extras")}
+                placeholder="0"
+                className={campo}
+              />
+            </Campo>
+          </div>
+
+          <dl className="mt-6 grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
+            <Linha
+              label={`Horas disponíveis (${n0.format(h.diasNormais)} dias normais)`}
+              value={n0.format(h.horasNormais)}
+            />
+            <Linha
+              label={`Horas extras (${n0.format(config.extras)} domingos/feriados)`}
+              value={n0.format(h.horasExtras)}
+            />
+            <Linha label="Horas totais a trabalhar" value={n0.format(h.horasTotais)} forte />
+            <Linha
+              label="Horas necessárias (carteira)"
+              value={temDados ? n0.format(r.totalHoras) : "—"}
+              forte
+            />
+          </dl>
+
+          {temDados && h.horasTotais > 0 && (
+            <div
+              className={`mt-6 rounded-xl p-4 font-semibold ${h.atende ? "bg-primary text-primary-foreground" : "bg-destructive text-destructive-foreground"}`}
+            >
+              {h.atende
+                ? `Dá para produzir a carteira no mês: sobram ${n0.format(h.saldo)} h (ocupação de ${pct.format(h.ocupacao)}).`
+                : `Não dá para produzir a carteira no mês: faltam ${n0.format(-h.saldo)} h (ocupação de ${pct.format(h.ocupacao)}).`}
+            </div>
+          )}
+        </section>
+
         {temDados && (
           <>
             <div className="mt-8 grid gap-4 md:grid-cols-2">
               <Kpi label="Média ponderada da vazão/h necessária" value={n0.format(r.mediaVazao)} />
-              <Kpi label="Média ponderada produção/dia necessária (kg)" value={n0.format(r.producaoDia)} accent />
+              <Kpi
+                label="Média ponderada produção/dia necessária (kg)"
+                value={n0.format(r.producaoDia)}
+                accent
+              />
             </div>
             <button
-              onClick={() => exportar(r)}
+              onClick={() => exportar(r, h, config)}
               className="mt-6 rounded-full bg-primary px-6 py-3 font-semibold text-primary-foreground shadow-sm transition hover:opacity-90"
             >
               Baixar resultado em Excel
@@ -234,7 +369,8 @@ function StatusSalvo({ status }: { status: Status }) {
     pendente: "Alterações não salvas",
     erro: "Erro ao salvar",
   }[status];
-  const cor = status === "erro" ? "bg-destructive" : status === "salvo" ? "bg-primary" : "bg-accent";
+  const cor =
+    status === "erro" ? "bg-destructive" : status === "salvo" ? "bg-primary" : "bg-accent";
   return (
     <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
       <span className={`h-2 w-2 rounded-full ${cor}`} />
@@ -270,9 +406,34 @@ function ThemeToggle() {
   );
 }
 
+const campo =
+  "w-full rounded-lg border border-border bg-background px-3 py-2 text-right text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent";
+
+function Campo({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 block text-muted-foreground">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function Linha({ label, value, forte }: { label: string; value: string; forte?: boolean }) {
+  return (
+    <div
+      className={`flex justify-between border-b border-border pb-2 ${forte ? "font-bold text-primary" : ""}`}
+    >
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
 function Kpi({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className={`rounded-2xl p-6 shadow-sm ${accent ? "bg-accent text-accent-foreground" : "bg-primary text-primary-foreground"}`}>
+    <div
+      className={`rounded-2xl p-6 shadow-sm ${accent ? "bg-accent text-accent-foreground" : "bg-primary text-primary-foreground"}`}
+    >
       <p className="text-sm opacity-90">{label}</p>
       <p className="mt-2 font-display text-4xl font-bold">{value}</p>
     </div>

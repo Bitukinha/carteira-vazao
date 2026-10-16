@@ -5,6 +5,8 @@ import { z } from "zod";
 const estadoSchema = z.object({
   vazao: z.record(z.string(), z.string().max(32)),
   carteira: z.record(z.string(), z.string().max(32)),
+  // Configuração do quadro de horas do mês (opcional para aceitar estados antigos).
+  horas: z.record(z.string(), z.string().max(32)).optional(),
 });
 
 export type Estado = z.infer<typeof estadoSchema>;
